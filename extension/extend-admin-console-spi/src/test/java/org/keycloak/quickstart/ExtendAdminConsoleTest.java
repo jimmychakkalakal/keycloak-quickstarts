@@ -19,21 +19,26 @@ package org.keycloak.quickstart;
 
 import org.jboss.arquillian.drone.api.annotation.Drone;
 import org.jboss.arquillian.graphene.page.Page;
-import org.jboss.arquillian.junit.Arquillian;
-import org.junit.AfterClass;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.keycloak.quickstart.test.FluentTestsHelper;
+import org.jboss.arquillian.junit5.ArquillianExtension;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.keycloak.quickstart.test.page.LoginPage;
-import java.time.Duration;
-import org.openqa.selenium.WebDriver;
-
-import java.util.concurrent.TimeUnit;
+import org.keycloak.testframework.annotations.InjectRealm;
+import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
+import org.keycloak.testframework.realm.ManagedRealm;
+import org.keycloak.testframework.realm.RealmConfig;
+import org.keycloak.testframework.realm.RealmConfigBuilder;
+import org.keycloak.testframework.server.KeycloakServerConfig;
+import org.keycloak.testframework.server.KeycloakServerConfigBuilder;
 import org.openqa.selenium.TimeoutException;
+import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.support.ui.FluentWait;
+
+import java.time.Duration;
+import java.util.concurrent.TimeUnit;
+
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.openqa.selenium.support.ui.ExpectedConditions.not;
@@ -41,10 +46,14 @@ import static org.openqa.selenium.support.ui.ExpectedConditions.urlToBe;
 
 /**
  */
-@RunWith(Arquillian.class)
+@ExtendWith(ArquillianExtension.class)
+@KeycloakIntegrationTest(config = ExtendAdminConsoleTest.ServerConfig.class)
 public class ExtendAdminConsoleTest {
 
-    public static final String KEYCLOAK_URL = "http://localhost:8180";
+    public static final String KEYCLOAK_URL = "http://localhost:8080";
+
+    @InjectRealm(config = ExtendAdminConsoleTest.MasterRealmConfig.class)
+    static ManagedRealm realm;
 
     @Page
     private LoginPage loginPage;
@@ -58,50 +67,31 @@ public class ExtendAdminConsoleTest {
     @Drone
     private WebDriver webDriver;
 
-    private static FluentTestsHelper testsHelper;
-
-    @BeforeClass
-    public static void beforeClass() {
-        testsHelper = new FluentTestsHelper(KEYCLOAK_URL,
-                "admin", "admin",
-                FluentTestsHelper.DEFAULT_ADMIN_REALM,
-                FluentTestsHelper.DEFAULT_ADMIN_CLIENT,
-                FluentTestsHelper.DEFAULT_ADMIN_REALM)
-                .init();
-    }
-
-    @AfterClass
-    public static void afterClass() {
-        if (testsHelper != null) {
-            testsHelper.close();
-        }
-    }
-
-    @Before
-    public void setup() throws Exception {
+    @BeforeEach
+    public void setup() {
         webDriver.manage().timeouts().pageLoadTimeout(30, TimeUnit.SECONDS);
         webDriver.manage().timeouts().implicitlyWait(10, TimeUnit.SECONDS);
     }
 
     @Test
-    public void testAdminUiTodoApp() throws Exception {
+    public void testAdminUiTodoApp() {
         adminConsole.navigateTo();
         waitForPageToLoad();
         loginPage.login("admin", "admin");
         waitForPageToLoad();
         assertThat(webDriver.getTitle(), containsString("Keycloak Administration Console"));
 
-        Assert.assertTrue(adminConsole.isTodoMenuPresent());
+        Assertions.assertTrue(adminConsole.isTodoMenuPresent());
         adminConsole.clickTodoMenuItem();
         waitForPageToLoad();
-        Assert.assertTrue(adminConsole.isOverviewPage());
+        Assertions.assertTrue(adminConsole.isOverviewPage());
 
         adminConsole.clickAddButton();
         waitForPageToLoad();
         adminConsole.fillTodoForm("something", "something that needs doing");
         adminConsole.clickSave();
 
-        Assert.assertTrue(adminConsole.isSaved());
+        Assertions.assertTrue(adminConsole.isSaved());
     }
 
     @Test
@@ -109,10 +99,10 @@ public class ExtendAdminConsoleTest {
         realmSettingsAttributePage.navigateTo();
         waitForPageToLoad();
 
-        Assert.assertTrue(realmSettingsAttributePage.logoInputExists());
+        Assertions.assertTrue(realmSettingsAttributePage.logoInputExists());
 
         realmSettingsAttributePage.saveLogoField("http://assests.mycompany.com/logo.png");
-        Assert.assertTrue(realmSettingsAttributePage.isSaved());
+        Assertions.assertTrue(realmSettingsAttributePage.isSaved());
     }
 
     public void waitForPageToLoad() {
@@ -130,6 +120,22 @@ public class ExtendAdminConsoleTest {
             catch (TimeoutException e) {
                 break; // URL has not changed recently - ok, the URL is stable and page is current
             }
+        }
+    }
+
+    public static class ServerConfig implements KeycloakServerConfig {
+
+        @Override
+        public KeycloakServerConfigBuilder configure(KeycloakServerConfigBuilder config) {
+            return config.dependencyCurrentProject();
+        }
+    }
+
+    static class MasterRealmConfig implements RealmConfig {
+
+        @Override
+        public RealmConfigBuilder configure(RealmConfigBuilder realmConfigBuilder) {
+            return realmConfigBuilder.name("master");
         }
     }
 }

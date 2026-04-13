@@ -61,15 +61,22 @@
         <dependency>
             <groupId>org.jboss.arquillian.graphene</groupId>
             <artifactId>arquillian-browser-screenshooter</artifactId>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.hamcrest</groupId>
             <artifactId>hamcrest-all</artifactId>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.keycloak.quickstarts</groupId>
             <artifactId>keycloak-quickstarts-test-helper</artifactId>
             <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.arquillian.junit5</groupId>
+            <artifactId>arquillian-junit5-container</artifactId>
             <scope>test</scope>
         </dependency>
         <!-- Only needed for testing by arquillian (ExporterRegistrationHandler requires JEE JAXB) -->

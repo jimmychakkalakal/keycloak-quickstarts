@@ -20,48 +20,58 @@ package org.keycloak.quickstart;
 import jakarta.ws.rs.core.Response;
 import org.jboss.arquillian.drone.api.annotation.Drone;
 import org.jboss.arquillian.graphene.page.Page;
-import org.jboss.arquillian.junit.Arquillian;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.jboss.arquillian.junit5.ArquillianExtension;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.keycloak.common.util.MultivaluedHashMap;
 import org.keycloak.models.UserModel;
 import org.keycloak.quickstart.page.ConsolePage;
 import org.keycloak.representations.idm.ComponentRepresentation;
+import org.keycloak.representations.idm.CredentialRepresentation;
+import org.keycloak.representations.idm.RealmRepresentation;
 import org.keycloak.representations.idm.RequiredActionProviderRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.keycloak.representations.userprofile.config.UPAttributePermissions;
-import org.keycloak.representations.userprofile.config.UPAttributeRequired;
 import org.keycloak.representations.userprofile.config.UPConfig;
-import org.keycloak.quickstart.test.FluentTestsHelper;
 import org.keycloak.quickstart.test.page.LoginPage;
+import org.keycloak.testframework.annotations.InjectRealm;
+import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
+import org.keycloak.testframework.realm.ManagedRealm;
+import org.keycloak.testframework.realm.RealmConfig;
+import org.keycloak.testframework.realm.RealmConfigBuilder;
+import org.keycloak.testframework.server.KeycloakServerConfig;
+import org.keycloak.testframework.server.KeycloakServerConfigBuilder;
 import org.keycloak.userprofile.config.UPConfigUtils;
+import org.keycloak.util.JsonSerialization;
+import org.openqa.selenium.TimeoutException;
 import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.support.ui.FluentWait;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import org.openqa.selenium.TimeoutException;
-import org.openqa.selenium.support.ui.FluentWait;
 import static java.lang.String.format;
-import static org.junit.Assert.assertEquals;
 import static org.keycloak.quickstart.util.StorageManager.addUser;
 import static org.keycloak.quickstart.util.StorageManager.createStorage;
-import static org.keycloak.quickstart.util.StorageManager.deleteStorage;
 import static org.keycloak.quickstart.util.StorageManager.getPropertyFile;
 import static org.openqa.selenium.support.ui.ExpectedConditions.not;
 import static org.openqa.selenium.support.ui.ExpectedConditions.urlToBe;
 
 
-@RunWith(Arquillian.class)
+@ExtendWith(ArquillianExtension.class)
+@KeycloakIntegrationTest(config = ArquillianSimpleStorageTest.ServerConfig.class)
 public class ArquillianSimpleStorageTest {
 
-    public static final String KEYCLOAK_URL = "http://localhost:8180";
+    public static final String KEYCLOAK_URL = "http://localhost:8080";
+
+    @InjectRealm(config = ArquillianSimpleStorageTest.QuickstartRealmConfig.class)
+    static ManagedRealm realm;
 
     @Page
     private LoginPage loginPage;
@@ -72,57 +82,71 @@ public class ArquillianSimpleStorageTest {
     @Drone
     private WebDriver webDriver;
 
-    private static FluentTestsHelper testsHelper;
+    private static boolean realmConfigured = false;
 
-    @BeforeClass
-    public static void beforeTestClass() throws IOException {
-        testsHelper = new FluentTestsHelper(KEYCLOAK_URL,
-                "admin", "admin",
-                FluentTestsHelper.DEFAULT_ADMIN_REALM,
-                FluentTestsHelper.DEFAULT_ADMIN_CLIENT,
-                FluentTestsHelper.DEFAULT_TEST_REALM)
-                .init();
-    }
-
-    @AfterClass
-    public static void afterTestClass() {
-        if (testsHelper != null) {
-            testsHelper.close();
+    @BeforeEach
+    public void beforeTest() {
+        if (!realmConfigured) {
+            configureRealm();
+            createUsers();
+            realmConfigured = true;
         }
-    }
-
-    @Before
-    public void beforeTest() throws IOException {
-        FluentTestsHelper r = testsHelper.importTestRealm("/quickstart-realm.json");
-        RequiredActionProviderRepresentation ra = r.getTestRealmResource().flows().getRequiredAction("VERIFY_PROFILE");
-        ra.setEnabled(false);
-        r.getTestRealmResource().flows().updateRequiredAction("VERIFY_PROFILE", ra);
-        disableUserProfileAttributes(r);
         webDriver.manage().timeouts().pageLoadTimeout(60, TimeUnit.SECONDS);
         webDriver.manage().timeouts().implicitlyWait(10, TimeUnit.SECONDS);
     }
 
+    private void configureRealm() {
+        RequiredActionProviderRepresentation ra = realm.admin().flows().getRequiredAction("VERIFY_PROFILE");
+        ra.setEnabled(false);
+        realm.admin().flows().updateRequiredAction("VERIFY_PROFILE", ra);
+        disableUserProfileAttributes();
+    }
+
+    private void createUsers() {
+        // Create alice user
+        UserRepresentation alice = new UserRepresentation();
+        alice.setUsername("alice");
+        alice.setEmail("alice@keycloak.org");
+        alice.setFirstName("Alice");
+        alice.setLastName("Liddel");
+        alice.setEnabled(true);
+        CredentialRepresentation aliceCred = new CredentialRepresentation();
+        aliceCred.setType(CredentialRepresentation.PASSWORD);
+        aliceCred.setValue("password");
+        aliceCred.setTemporary(false);
+        alice.setCredentials(List.of(aliceCred));
+        realm.admin().users().create(alice).close();
+
+        // Create test-admin user
+        UserRepresentation testAdmin = new UserRepresentation();
+        testAdmin.setUsername("test-admin");
+        testAdmin.setEmail("test@admin.org");
+        testAdmin.setFirstName("Admin");
+        testAdmin.setLastName("Test");
+        testAdmin.setEnabled(true);
+        CredentialRepresentation adminCred = new CredentialRepresentation();
+        adminCred.setType(CredentialRepresentation.PASSWORD);
+        adminCred.setValue("password");
+        adminCred.setTemporary(false);
+        testAdmin.setCredentials(List.of(adminCred));
+        realm.admin().users().create(testAdmin).close();
+    }
+
     // Disable email, firstName, lastName attributes from user-profile
-    private void disableUserProfileAttributes(FluentTestsHelper r) {
-        UPConfig upConfig = r.getTestRealmResource().users().userProfile().getConfiguration();
+    private void disableUserProfileAttributes() {
+        UPConfig upConfig = realm.admin().users().userProfile().getConfiguration();
 
         removeUserPermissionsFromAttribute(upConfig, UserModel.EMAIL);
         removeUserPermissionsFromAttribute(upConfig, UserModel.FIRST_NAME);
         removeUserPermissionsFromAttribute(upConfig, UserModel.LAST_NAME);
 
-        r.getTestRealmResource().users().userProfile().update(upConfig);
+        realm.admin().users().userProfile().update(upConfig);
     }
 
     private void removeUserPermissionsFromAttribute(UPConfig upConfig, String attrName) {
         UPAttributePermissions upAttributePermissions = upConfig.getAttribute(attrName).getPermissions();
         upAttributePermissions.getEdit().remove(UPConfigUtils.ROLE_USER);
         upAttributePermissions.getView().remove(UPConfigUtils.ROLE_USER);
-    }
-
-    @After
-    public void afterTest() {
-        testsHelper.deleteTestRealm();
-        deleteStorage(); // the storage must not be deleted before realm
     }
 
     private void navigateTo(String path) {
@@ -132,40 +156,40 @@ public class ArquillianSimpleStorageTest {
     @Test
     public void testUserReadOnlyFederationStorage() {
         addProvider(org.keycloak.quickstart.readonly.PropertyFileUserStorageProviderFactory.PROVIDER_NAME);
-        assertEquals("There should be no tbrady user", 0, testsHelper.getTestRealmResource().users().search("tbrady").size());
+        Assertions.assertEquals(0, realm.admin().users().search("tbrady").size(), "There should be no tbrady user");
 
         navigateToAccount("tbrady", "superbowl", false);
-        assertEquals("Should display the user from storage provider", "tbrady", consolePage.getUser());
+        Assertions.assertEquals("tbrady", consolePage.getUser(), "Should display the user from storage provider");
         consolePage.logout();
     }
 
     @Test
     public void testUserWritableFederationStorage() {
-        assertEquals("There should be two users", 2, (long) testsHelper.getTestRealmResource().users().count());
-        assertEquals("There should be two users listed", 2, testsHelper.getTestRealmResource().users().list().size());
-        assertEquals("There should be no malcom user", 0, testsHelper.getTestRealmResource().users().search("malcom").size());
-        assertEquals("There should be no rob user", 0, testsHelper.getTestRealmResource().users().search("rob").size());
+        Assertions.assertEquals(2, (long) realm.admin().users().count(), "There should be two users");
+        Assertions.assertEquals(2, realm.admin().users().list().size(), "There should be two users listed");
+        Assertions.assertEquals(0, realm.admin().users().search("malcom").size(), "There should be no malcom user");
+        Assertions.assertEquals(0, realm.admin().users().search("rob").size(), "There should be no rob user");
 
         createStorage();
         addUser("malcom", "butler");
         addProvider(org.keycloak.quickstart.writeable.PropertyFileUserStorageProviderFactory.PROVIDER_NAME);
 
-        navigateToAccount("malcom", "butler", true);
-        assertEquals("Should display the user from storage provider", "malcom", consolePage.getUser());
+        navigateToAccount("malcom", "butler", false);
+        Assertions.assertEquals("malcom", consolePage.getUser(), "Should display the user from storage provider");
         consolePage.logout();
 
         addUser("rob", "gronkowski");
-        navigateToAccount("rob", "gronkowski", true);
-        assertEquals("Should display the user from storage provider", "rob", consolePage.getUser());
+        navigateToAccount("rob", "gronkowski", false);
+        Assertions.assertEquals("rob", consolePage.getUser(), "Should display the user from storage provider");
         consolePage.logout();
 
-        assertEquals("There should be two users", 4, (long) testsHelper.getTestRealmResource().users().count());
-        assertEquals("There should be two users listed", 4, testsHelper.getTestRealmResource().users().list().size());
+        Assertions.assertEquals(4, (long) realm.admin().users().count(), "There should be four users");
+        Assertions.assertEquals(4, realm.admin().users().list().size(), "There should be four users listed");
 
-        List<UserRepresentation> list = testsHelper.getTestRealmResource().users().list(2, 2);
-        assertEquals("There should be two users listed", 2, list.size());
-        assertEquals("First user should be malcom", "malcom", list.get(0).getUsername());
-        assertEquals("Second user should be rob", "rob", list.get(1).getUsername());
+        List<UserRepresentation> list = realm.admin().users().list(2, 2);
+        Assertions.assertEquals(2, list.size(), "There should be two users listed");
+        Assertions.assertEquals("malcom", list.get(0).getUsername(), "First user should be malcom");
+        Assertions.assertEquals("rob", list.get(1).getUsername(), "Second user should be rob");
     }
 
     private void addProvider(String providerId) {
@@ -180,20 +204,15 @@ public class ArquillianSimpleStorageTest {
             }});
         }
 
-        Response response = testsHelper.getTestRealmResource().components().add(provider);
-        assertEquals(201, response.getStatus());
+        Response response = realm.admin().components().add(provider);
+        Assertions.assertEquals(201, response.getStatus());
     }
 
     private void navigateToAccount(String user, String password, boolean changePassword) {
-        navigateTo(format("/realms/%s/account/#/", testsHelper.getTestRealmName()));
+        navigateTo(format("/realms/%s/account/#/", realm.getName()));
         waitForPageToLoad();
 
-        if (changePassword) {
-            loginPage.login(user, testsHelper.changePassword(user, "quickstart"));
-        }
-        else {
-            loginPage.login(user, password);
-        }
+        loginPage.login(user, password);
     }
 
     public void waitForPageToLoad() {
@@ -210,6 +229,35 @@ public class ArquillianSimpleStorageTest {
             }
             catch (TimeoutException e) {
                 break; // URL has not changed recently - ok, the URL is stable and page is current
+            }
+        }
+    }
+
+    public static class ServerConfig implements KeycloakServerConfig {
+
+        @Override
+        public KeycloakServerConfigBuilder configure(KeycloakServerConfigBuilder config) {
+            return config.dependencyCurrentProject();
+        }
+    }
+
+    static class QuickstartRealmConfig implements RealmConfig {
+
+        @Override
+        public RealmConfigBuilder configure(RealmConfigBuilder realmConfigBuilder) {
+            // Load the realm from JSON and override it completely
+            try (InputStream is = getClass().getResourceAsStream("/quickstart-realm.json")) {
+                RealmRepresentation realmRep = JsonSerialization.readValue(is, RealmRepresentation.class);
+
+                // Extract key properties from JSON
+                return realmConfigBuilder
+                        .name(realmRep.getRealm())
+                        .sslRequired(realmRep.getSslRequired())
+                        .ssoSessionIdleTimeout(realmRep.getSsoSessionIdleTimeout())
+                        .ssoSessionMaxLifespan(realmRep.getSsoSessionMaxLifespan())
+                        .registrationAllowed(realmRep.isRegistrationAllowed());
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to load realm from JSON", e);
             }
         }
     }

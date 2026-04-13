@@ -17,23 +17,17 @@
 
 package org.keycloak.quickstart.event.listener;
 
-import org.hamcrest.Matchers;
 import org.jboss.arquillian.drone.api.annotation.Drone;
 import org.jboss.arquillian.graphene.page.Page;
-import org.jboss.arquillian.junit.Arquillian;
+import org.jboss.arquillian.junit5.ArquillianExtension;
 import org.jboss.logging.Logger;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.keycloak.admin.client.Keycloak;
+import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.keycloak.Keycloak;
 import org.keycloak.events.EventType;
-import org.keycloak.representations.idm.RealmEventsConfigRepresentation;
-import org.keycloak.quickstart.test.page.LoginPage;
 import org.keycloak.quickstart.test.FluentTestsHelper;
+import org.keycloak.quickstart.test.page.LoginPage;
+import org.keycloak.representations.idm.RealmEventsConfigRepresentation;
 import org.openqa.selenium.WebDriver;
 
 import java.io.IOException;
@@ -45,12 +39,12 @@ import static java.lang.String.format;
 /**
  * @author <a href="mailto:mkanis@redhat.com">Martin Kanis</a>
  */
-@RunWith(Arquillian.class)
+@ExtendWith(ArquillianExtension.class)
 public class ArquillianSysoutEventListenerProviderTest {
 
     private static final Logger logger = Logger.getLogger(ArquillianSysoutEventListenerProviderTest.class);
 
-    public static final String KEYCLOAK_URL = "http://localhost:8180";
+    public static final String KEYCLOAK_URL = "http://localhost:8080";
 
     public static final String REALM_QS_EVENT_SYSOUT = "event-listener-sysout";
 
@@ -70,7 +64,7 @@ public class ArquillianSysoutEventListenerProviderTest {
 
     private static FluentTestsHelper fluentTestsHelper;
     
-    @BeforeClass
+    @BeforeAll
     public static void setupClass() throws IOException {
         fluentTestsHelper = new FluentTestsHelper(KEYCLOAK_URL,
                 FluentTestsHelper.DEFAULT_ADMIN_USERNAME,
@@ -82,12 +76,12 @@ public class ArquillianSysoutEventListenerProviderTest {
         ADMIN_ID = fluentTestsHelper.getKeycloakInstance().realm(REALM_QS_EVENT_SYSOUT).users().search("test-admin").get(0).getId();
     }
 
-    @AfterClass
+    @AfterAll
     public static void tearDownClass() {
         fluentTestsHelper.deleteRealm(REALM_QS_EVENT_SYSOUT);
     }
 
-    @Before
+    @BeforeEach
     public void setup() throws IOException {
         webDriver.manage().timeouts().pageLoadTimeout(30, TimeUnit.SECONDS);
         webDriver.manage().timeouts().implicitlyWait(10, TimeUnit.SECONDS);
@@ -104,7 +98,7 @@ public class ArquillianSysoutEventListenerProviderTest {
         registerEventListener();
     }
 
-    @After
+    @AfterEach
     public void cleanup() {
         logReader.close();
 
@@ -181,13 +175,13 @@ public class ArquillianSysoutEventListenerProviderTest {
 
         String line = logReader.pollLine();
         if (line == null) {
-            Assert.fail("Not line present in the server log when waiting for eventType " + expectedEventType);
+            Assertions.fail("Not line present in the server log when waiting for eventType " + expectedEventType);
         }
 
         if (expectExcluded) {
-            Assert.assertEquals(line, prefix + expectedEventType);
+            Assertions.assertEquals(line, prefix + expectedEventType);
         } else {
-            Assert.assertThat(line, Matchers.containsString(prefix + "type=" + expectedEventType));
+            Assertions.assertTrue(line.contains(prefix + "type=" + expectedEventType));
         }
     }
 
@@ -201,13 +195,13 @@ public class ArquillianSysoutEventListenerProviderTest {
 
         String line = logReader.pollLine();
         if (line == null) {
-            Assert.fail("Not line present in the server log when waiting for eventType " + expectedEventType);
+            Assertions.fail("Not line present in the server log when waiting for eventType " + expectedEventType);
         }
 
         if (expectExcluded) {
-            Assert.assertEquals(line, prefix + expectedEventType);
+            Assertions.assertEquals(line, prefix + expectedEventType);
         } else {
-            Assert.assertThat(line, Matchers.containsString(prefix + "operationType=" + expectedEventType));
+            Assertions.assertTrue(line.contains(prefix + "operationType=" + expectedEventType));
         }
     }
 }

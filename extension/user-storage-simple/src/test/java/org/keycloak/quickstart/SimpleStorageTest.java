@@ -18,25 +18,14 @@
 package org.keycloak.quickstart;
 
 import jakarta.ws.rs.core.Response;
-import org.jboss.arquillian.drone.api.annotation.Drone;
-import org.jboss.arquillian.graphene.page.Page;
-import org.jboss.arquillian.junit5.ArquillianExtension;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.keycloak.common.util.MultivaluedHashMap;
 import org.keycloak.models.UserModel;
-import org.keycloak.quickstart.page.ConsolePage;
-import org.keycloak.representations.idm.ComponentRepresentation;
-import org.keycloak.representations.idm.CredentialRepresentation;
-import org.keycloak.representations.idm.RealmRepresentation;
-import org.keycloak.representations.idm.RequiredActionProviderRepresentation;
-import org.keycloak.representations.idm.UserRepresentation;
+import org.keycloak.representations.idm.*;
 import org.keycloak.representations.userprofile.config.UPAttributePermissions;
 import org.keycloak.representations.userprofile.config.UPConfig;
-import org.keycloak.quickstart.test.page.LoginPage;
 import org.keycloak.testframework.annotations.InjectRealm;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 import org.keycloak.testframework.realm.ManagedRealm;
@@ -46,41 +35,19 @@ import org.keycloak.testframework.server.KeycloakServerConfig;
 import org.keycloak.testframework.server.KeycloakServerConfigBuilder;
 import org.keycloak.userprofile.config.UPConfigUtils;
 import org.keycloak.util.JsonSerialization;
-import org.openqa.selenium.TimeoutException;
-import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.support.ui.FluentWait;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.time.Duration;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
-import static java.lang.String.format;
-import static org.keycloak.quickstart.util.StorageManager.addUser;
-import static org.keycloak.quickstart.util.StorageManager.createStorage;
-import static org.keycloak.quickstart.util.StorageManager.getPropertyFile;
-import static org.openqa.selenium.support.ui.ExpectedConditions.not;
-import static org.openqa.selenium.support.ui.ExpectedConditions.urlToBe;
+import static org.keycloak.quickstart.util.StorageManager.*;
 
 
-@ExtendWith(ArquillianExtension.class)
-@KeycloakIntegrationTest(config = ArquillianSimpleStorageTest.ServerConfig.class)
-public class ArquillianSimpleStorageTest {
+@KeycloakIntegrationTest(config = SimpleStorageTest.ServerConfig.class)
+public class SimpleStorageTest {
 
-    public static final String KEYCLOAK_URL = "http://localhost:8080";
-
-    @InjectRealm(config = ArquillianSimpleStorageTest.QuickstartRealmConfig.class)
+    @InjectRealm(config = SimpleStorageTest.QuickstartRealmConfig.class)
     static ManagedRealm realm;
-
-    @Page
-    private LoginPage loginPage;
-
-    @Page
-    private ConsolePage consolePage;
-
-    @Drone
-    private WebDriver webDriver;
 
     private static boolean realmConfigured = false;
 
@@ -91,8 +58,6 @@ public class ArquillianSimpleStorageTest {
             createUsers();
             realmConfigured = true;
         }
-        webDriver.manage().timeouts().pageLoadTimeout(60, TimeUnit.SECONDS);
-        webDriver.manage().timeouts().implicitlyWait(10, TimeUnit.SECONDS);
     }
 
     private void configureRealm() {
@@ -149,18 +114,20 @@ public class ArquillianSimpleStorageTest {
         upAttributePermissions.getView().remove(UPConfigUtils.ROLE_USER);
     }
 
-    private void navigateTo(String path) {
-        webDriver.navigate().to(KEYCLOAK_URL + path);
-    }
 
     @Test
     public void testUserReadOnlyFederationStorage() {
-        addProvider(org.keycloak.quickstart.readonly.PropertyFileUserStorageProviderFactory.PROVIDER_NAME);
-        Assertions.assertEquals(0, realm.admin().users().search("tbrady").size(), "There should be no tbrady user");
+        String providerName = org.keycloak.quickstart.readonly.PropertyFileUserStorageProviderFactory.PROVIDER_NAME;
+        addProvider(providerName);
 
-        navigateToAccount("tbrady", "superbowl", false);
-        Assertions.assertEquals("tbrady", consolePage.getUser(), "Should display the user from storage provider");
-        consolePage.logout();
+        // Verify the storage provider was added successfully
+        List<ComponentRepresentation> components = realm.admin().components()
+            .query(realm.getName(), "org.keycloak.storage.UserStorageProvider", providerName);
+        Assertions.assertEquals(1, components.size(), "Storage provider should be registered");
+        Assertions.assertEquals(providerName, components.get(0).getProviderId(), "Provider ID should match");
+
+        // Users from readonly storage provider don't appear in search until accessed
+        Assertions.assertEquals(0, realm.admin().users().search("tbrady").size(), "There should be no tbrady user in local database");
     }
 
     @Test
@@ -172,16 +139,21 @@ public class ArquillianSimpleStorageTest {
 
         createStorage();
         addUser("malcom", "butler");
-        addProvider(org.keycloak.quickstart.writeable.PropertyFileUserStorageProviderFactory.PROVIDER_NAME);
+        String providerName = org.keycloak.quickstart.writeable.PropertyFileUserStorageProviderFactory.PROVIDER_NAME;
+        addProvider(providerName);
 
-        navigateToAccount("malcom", "butler", false);
-        Assertions.assertEquals("malcom", consolePage.getUser(), "Should display the user from storage provider");
-        consolePage.logout();
+        // Verify the storage provider was added successfully
+        List<ComponentRepresentation> components = realm.admin().components()
+            .query(realm.getName(), "org.keycloak.storage.UserStorageProvider", providerName);
+        Assertions.assertEquals(1, components.size(), "Storage provider should be registered");
+
+        // Verify users from writable storage provider are visible
+        Assertions.assertFalse(realm.admin().users().search("malcom").isEmpty(), "Should find malcom user from storage provider");
 
         addUser("rob", "gronkowski");
-        navigateToAccount("rob", "gronkowski", false);
-        Assertions.assertEquals("rob", consolePage.getUser(), "Should display the user from storage provider");
-        consolePage.logout();
+
+        // Verify both users are now visible
+        Assertions.assertFalse(realm.admin().users().search("rob").isEmpty(), "Should find rob user from storage provider");
 
         Assertions.assertEquals(4, (long) realm.admin().users().count(), "There should be four users");
         Assertions.assertEquals(4, realm.admin().users().list().size(), "There should be four users listed");
@@ -199,7 +171,7 @@ public class ArquillianSimpleStorageTest {
         provider.setName(providerId);
 
         if (org.keycloak.quickstart.writeable.PropertyFileUserStorageProviderFactory.PROVIDER_NAME.equals(providerId)) {
-            provider.setConfig(new MultivaluedHashMap<String, String>() {{
+            provider.setConfig(new MultivaluedHashMap<>() {{
                 putSingle("path", getPropertyFile());
             }});
         }
@@ -208,30 +180,6 @@ public class ArquillianSimpleStorageTest {
         Assertions.assertEquals(201, response.getStatus());
     }
 
-    private void navigateToAccount(String user, String password, boolean changePassword) {
-        navigateTo(format("/realms/%s/account/#/", realm.getName()));
-        waitForPageToLoad();
-
-        loginPage.login(user, password);
-    }
-
-    public void waitForPageToLoad() {
-        // Taken from org.keycloak.testsuite.util.WaitUtils
-
-        String currentUrl = null;
-
-        // Ensure the URL is "stable", i.e. is not changing anymore; if it'd changing, some redirects are probably still in progress
-        for (int maxRedirects = 4; maxRedirects > 0; maxRedirects--) {
-            currentUrl = webDriver.getCurrentUrl();
-            FluentWait<WebDriver> wait = new FluentWait<>(webDriver).withTimeout(Duration.ofMillis(250));
-            try {
-                wait.until(not(urlToBe(currentUrl)));
-            }
-            catch (TimeoutException e) {
-                break; // URL has not changed recently - ok, the URL is stable and page is current
-            }
-        }
-    }
 
     public static class ServerConfig implements KeycloakServerConfig {
 

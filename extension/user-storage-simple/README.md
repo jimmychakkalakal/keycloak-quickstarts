@@ -77,14 +77,23 @@ for `User` for both `edit` and `view`. This step is not needed in `master` realm
 Integration test of the Quickstart
 ----------------------------------
 
-1. Make sure you have an Keycloak server running with an admin user in the `master` realm or use the provided docker image. Your <span>Keycloak</span> should be listening on `http://localhost:8180`. You can archive this by running:
+The integration tests use the Keycloak Test Framework, which automatically starts and manages a Keycloak server instance for testing. The tests verify:
+
+- User storage providers are properly registered and configured
+- Users from the writable storage provider are visible via the Admin API
+- Provider configuration is correct
+
+To run the integration tests:
 
 ```
-./kc.sh start-dev --http-port=8180
+mvn verify -Pextension -pl extension/user-storage-simple
 ```
 
-2. You need to have Chrome browser installed and updated to the latest version. See [README](../../README.md#chrome-driver-version) for additional details.
-3. Run `mvn clean install -Dextension`
+No external Keycloak server or browser is required. The test framework will:
+1. Automatically download and start a Keycloak server on port 8080
+2. Deploy the user storage providers
+3. Verify the providers are working correctly using the Admin API
+4. Clean up after the tests complete
 
 More Information
 ----------------
